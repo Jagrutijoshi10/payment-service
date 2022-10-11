@@ -1,0 +1,35 @@
+FROM node:10
+
+##RUN npm i npm@latest -g
+
+#ENV NODE_ENV=prod
+###RUN mkdir /opt/workspace/application_code/
+#WORKDIR /app
+
+##COPY package.json .
+COPY ["package.json", "package-lock.json*", "./"]
+
+RUN npm config set package-lock false
+
+RUN apt-get -y autoclean && apt-get -y autoremove && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+### Install Node Package Manager ####
+RUN npm install
+
+ADD package.json /tmp/package.json
+
+RUN cd /tmp
+RUN  mkdir -p /usr/src/app && cp -a /node_modules /usr/src/app/
+
+WORKDIR /usr/src/app
+
+COPY . /usr/src/app
+
+### Copy application code into workspace dir ###
+#COPY . .
+
+### EXPOSE view model layer PORT 2002 ####
+EXPOSE 2014
+
+### Execute the nodejs application ####
+CMD [ "npm", "run", "prod" ]

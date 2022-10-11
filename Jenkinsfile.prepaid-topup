@@ -1,0 +1,79 @@
+pipeline {
+ agent any
+
+ environment {
+  PROJECT_NAME = 'prod_umobile_app_payment_management'
+  GCR_LOCATION = 'asia.gcr.io'
+  GCR_PROJECT_ID = 'um-production'
+  LOCATION = "asia-southeast1"
+  NAMESPACE = 'default'
+  DEPLOYMENT_NAME = ' prod-umobile-app-prepaid-topup-management'
+  TAG = 'k'
+ }
+
+ stages {
+  stage("Checkout code") {
+   steps {
+    checkout scm
+   }
+  }
+    stage('Sonar') {
+   steps {
+    script {
+        def scannerHome = tool 'umobile-sonar';
+           withSonarQubeEnv("um-sonar") {
+           sh "${tool("umobile-sonar")}/bin/sonar-scanner \
+           -Dsonar.projectKey=app_payment_jenkins_master \
+           -Dsonar.sources=. \
+           -Dsonar.host.url=http://172.21.0.106:9000 \
+           -Dsonar.login=939bf230e8b153f27583959230b3a2c870f0bcf9"
+               }
+           }
+
+    }
+   }
+
+   
+ stage("Quality Gate"){
+
+     options {
+                timeout(time: 1, unit: "HOURS")   
+            }
+     
+          steps {
+    script {
+              def qg = waitForQualityGate(webhookSecretId: 'webhooksecret')
+              if (qg.status != 'OK') {
+                  error "Pipeline aborted due to quality gateway failureS: ${qg.status}"
+              }
+          }
+          }
+     
+}
+
+  stage('Build image') {
+   steps {
+    script {
+     docker.withRegistry("https://asia.gcr.io/um-production", "gcr:um-production") {
+      def tag = sh(returnStdout: true, script: "git describe --abbrev=0 --tags | sed 's/* //'").trim()
+      def buildImage = docker.build("${GCR_LOCATION}/${env.GCR_PROJECT_ID}/${env.PROJECT_NAME}:${env.TAG}${BUILD_NUMBER}", "--no-cache --build-arg ENV=${NAMESPACE} -f ./dockerfile.prepaid-topup .")
+      buildImage.push()
+     }
+    }
+   }
+  }
+  stage("Deploy") {
+   steps {
+    withKubeConfig([credentialsId: 'um-production', serverUrl: 'https://35.240.172.53']) {  
+     sh "kubectl set image deployment/${env.DEPLOYMENT_NAME} ${env.DEPLOYMENT_NAME}=${env.GCR_LOCATION}/${env.GCR_PROJECT_ID}/${env.PROJECT_NAME}:${env.TAG}${BUILD_NUMBER}"
+    }
+   }
+  }
+ }
+  post { 
+        always { 
+            cleanWs()
+        }
+    }
+}
+
